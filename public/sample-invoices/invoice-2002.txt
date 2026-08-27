@@ -1,0 +1,22 @@
+TAX INVOICE
+
+Seller: ShreeTech Electronics Pvt. Ltd.
+GSTIN: 29MOCK1234F1Z5
+Address: 42, Brigade Road, Bengaluru – 560001
+
+Invoice Number: INV-2002
+Invoice Date: 14 Sep 2026
+
+Bill To:
+Quantum Devices Pvt. Ltd.
+GSTIN: 07QABCD1234E1ZP
+Address: Connaught Place, New Delhi – 110001
+
+Place of Supply: 07 – Delhi
+
+Items:
+Smartphone (HSN: 8517)  x 5 units  @ ₹15,000 each  = ₹75,000
+
+Taxable Value: ₹75,000
+IGST @ 18%: ₹13,500
+Total Invoice Value: ₹88,500

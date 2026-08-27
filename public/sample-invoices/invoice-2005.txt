@@ -1,0 +1,25 @@
+TAX INVOICE
+
+Seller: ShreeTech Electronics Pvt. Ltd.
+GSTIN: 29MOCK1234F1Z5
+Address: 42, Brigade Road, Bengaluru – 560001
+
+Invoice Number: INV-2005
+Invoice Date: 20 Sep 2026
+
+Bill To:
+Bright Innovations Ltd.
+[GSTIN NOT FOUND ON INVOICE]
+Address: Sector 18, Noida, Uttar Pradesh – 201301
+
+Place of Supply: NOT SPECIFIED
+
+Items:
+Power Adaptor (HSN: 8504)  x 20 units  @ ₹1,200 each  = ₹24,000
+
+Taxable Value: ₹24,000
+GST Rate: 18%
+[TAX AMOUNTS NOT FILLED]
+Total Invoice Value: ₹28,320
+
+NOTE: Buyer GSTIN and Place of Supply are missing from this invoice.

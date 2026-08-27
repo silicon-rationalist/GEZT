@@ -1,0 +1,22 @@
+TAX INVOICE
+
+Seller: ShreeTech Electronics Pvt. Ltd.
+GSTIN: 29MOCK1234F1Z5
+Address: 42, Brigade Road, Bengaluru – 560001
+
+Invoice Number: INV-2001
+Invoice Date: 12 Sep 2026
+
+Bill To:
+ABC Technologies Pvt. Ltd.
+GSTIN: 27AAABM1234C1ZK
+Address: Plot 14, Andheri East, Mumbai – 400069
+
+Place of Supply: 27 – Maharashtra
+
+Items:
+Laptop Computer (HSN: 8471)  x 10 units  @ ₹5,000 each  = ₹50,000
+
+Taxable Value: ₹50,000
+IGST @ 18%: ₹9,000
+Total Invoice Value: ₹59,000

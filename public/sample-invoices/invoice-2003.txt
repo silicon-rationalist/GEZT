@@ -1,0 +1,21 @@
+RETAIL INVOICE
+
+Seller: ShreeTech Electronics Pvt. Ltd.
+GSTIN: 29MOCK1234F1Z5
+Address: 42, Brigade Road, Bengaluru – 560001
+
+Invoice Number: B2C-2001
+Invoice Date: 15 Sep 2026
+
+Bill To: Walk-in Customer (Unregistered)
+Place of Supply: 29 – Karnataka
+
+Items:
+USB-C Charging Cable (HSN: 8544)  x 3 units  @ ₹500 each  = ₹1,500
+
+Taxable Value: ₹1,500
+CGST @ 9%: ₹135
+SGST @ 9%: ₹135
+Total Invoice Value: ₹1,770
+
+Customer is NOT GST registered.

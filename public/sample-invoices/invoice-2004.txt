@@ -1,0 +1,25 @@
+EXPORT INVOICE
+
+Seller: ShreeTech Electronics Pvt. Ltd.
+GSTIN: 29MOCK1234F1Z5
+Address: 42, Brigade Road, Bengaluru – 560001
+
+Invoice Number: EXP-2001
+Invoice Date: 18 Sep 2026
+
+Export To:
+Dubai Electronics LLC
+Address: Deira, Dubai, United Arab Emirates
+
+Shipping Bill No: SB-2026-09441
+Shipping Bill Date: 19 Sep 2026
+Port of Export: INMAA4 – Chennai Sea Port
+
+Items:
+Electronic Components (HSN: 8542)  Qty: 50  Total: USD 1,500
+
+INR Equivalent: ₹1,24,500
+Foreign Currency Value: 1500 USD
+Export Type: Without Payment of Tax (WOPT)
+IGST: NIL (Zero-rated export)
+Total Invoice Value: ₹1,24,500
