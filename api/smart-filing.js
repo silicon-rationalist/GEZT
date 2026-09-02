@@ -52,16 +52,41 @@ export default async function handler(req, res) {
       const systemMsg = (bodyJson.messages || []).find(m => m.role === 'system')?.content || '';
       const nonSystemMsgs = (bodyJson.messages || []).filter(m => m.role !== 'system');
 
-      const contents = nonSystemMsgs.map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content || '' }],
-      }));
+      const contents = nonSystemMsgs.map(m => {
+        const parts = [];
+        if (typeof m.content === 'string') {
+          parts.push({ text: m.content || '' });
+        } else if (Array.isArray(m.content)) {
+          m.content.forEach(item => {
+            if (item.type === 'text') {
+              parts.push({ text: item.text || '' });
+            } else if (item.type === 'image_url' && item.image_url?.url) {
+              const url = item.image_url.url;
+              const match = url.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                parts.push({
+                  inlineData: {
+                    mimeType: match[1],
+                    data: match[2],
+                  },
+                });
+              } else {
+                parts.push({ text: `[Image reference: ${url}]` });
+              }
+            }
+          });
+        }
+        return {
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: parts.length > 0 ? parts : [{ text: '' }],
+        };
+      });
 
       const payload = {
         contents,
         generationConfig: {
           responseMimeType: 'application/json',
-          maxOutputTokens: 1500,
+          maxOutputTokens: 2000,
           temperature: 0.1,
         },
       };

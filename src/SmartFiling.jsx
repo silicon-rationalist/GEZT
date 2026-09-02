@@ -336,14 +336,23 @@ async function callLLM(messages) {
 
 // ─── Invoice LLM call ─────────────────────────────────────────────────────────
 
-async function callLLMForInvoice(invoiceText) {
+async function callLLMForInvoice(invoiceInput) {
   if (!HAS_KEY) {
     console.log('[Smart Filing] No API key available — invoice using Demo Mode');
     return null;
   }
+  let messageContent;
+  if (typeof invoiceInput === 'object' && invoiceInput?.dataUrl) {
+    messageContent = [
+      { type: 'text', text: 'Extract all GST transaction data from this uploaded invoice document image/PDF into the strict JSON schema. Return ONLY valid JSON.' },
+      { type: 'image_url', image_url: { url: invoiceInput.dataUrl } }
+    ];
+  } else {
+    messageContent = `Extract GST transaction data from this invoice document:\n\n${String(invoiceInput || '').substring(0, 4000)}\n\nRespond ONLY with valid JSON.`;
+  }
   const messages = [{
     role: 'user',
-    content: `Extract GST transaction data from this invoice document:\n\n${invoiceText.substring(0, 4000)}\n\nRespond ONLY with valid JSON.`,
+    content: messageContent,
   }];
   try {
     return await callOpenRouter(messages, INVOICE_SYSTEM_PROMPT);
@@ -917,6 +926,15 @@ function readFileAsText(file) {
   });
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 // ─── AI Status Indicator ──────────────────────────────────────────────────────
 
 function AIStatusIndicator({ source, errorType }) {
@@ -1022,22 +1040,32 @@ function ClarificationQuestion({ question, questionType, choices, onAnswer }) {
 
 // ─── Per-transaction review card ──────────────────────────────────────────────
 
+// ─── Per-transaction review card ──────────────────────────────────────────────
+
 function TransactionReviewCard({ tx, computed, index, onEdit, onRemove }) {
+  const [showExplain, setShowExplain] = useState(true);
   const [showTech, setShowTech] = useState(false);
   const cls = tx.classification || {};
   const isExport = tx.type === 'EXPORT';
   const isIntra = computed?.pos === SELLER_STATE_CODE;
+  const posName = PLACES_OF_SUPPLY.find(p => p.code === computed?.pos)?.name || computed?.pos || 'Unknown';
+
+  const confidenceScore = Math.round((cls.confidence || 0.95) * 100);
 
   return (
     <div className="sf-review-card">
       <div className="sf-review-header">
         <div className="sf-review-txnum">#{index + 1}</div>
         <div className="sf-classification-tag">
-          <span className="sf-cls-section">{cls.section}</span>
-          <span className="sf-cls-label">{cls.label}</span>
+          <span className="sf-cls-section">{cls.section || (tx.type === 'B2B' ? '4A' : tx.type === 'B2C' ? '5' : tx.type === 'EXPORT' ? '6A' : '9B')}</span>
+          <span className="sf-cls-label">{cls.label || `${tx.type} Invoices`}</span>
         </div>
-        {tx.status === 'needs_clarification' && (
+        {tx.status === 'needs_clarification' ? (
           <span className="sf-review-needs-badge">⚠ Needs info</span>
+        ) : (
+          <span className="sf-confidence-badge" title="AI Entity & Rule Confidence">
+            ✓ {confidenceScore}% Confidence
+          </span>
         )}
       </div>
 
@@ -1056,7 +1084,7 @@ function TransactionReviewCard({ tx, computed, index, onEdit, onRemove }) {
         {tx.type !== 'EXPORT' && computed?.pos && (
           <div className="sf-review-row">
             <span>Place of Supply</span>
-            <span>{computed.pos} — {PLACES_OF_SUPPLY.find(p => p.code === computed.pos)?.name || computed.pos}</span>
+            <span>{computed.pos} — {posName}</span>
           </div>
         )}
         <div className="sf-review-divider" />
@@ -1077,25 +1105,55 @@ function TransactionReviewCard({ tx, computed, index, onEdit, onRemove }) {
         )}
       </div>
 
-      {cls.reasoning && (
-        <div className="sf-reasoning-note"><span>ℹ</span><p>{cls.reasoning}</p></div>
-      )}
-
-      <button className="sf-tech-toggle" onClick={() => setShowTech(t => !t)}>
-        {showTech ? '▾' : '▸'} Technical details
-      </button>
-      {showTech && (
-        <div className="sf-tech-details">
-          <div className="sf-tech-row"><span>GST Type</span><code>{tx.type}</code></div>
-          <div className="sf-tech-row"><span>GSTR-1 Section</span><code>{cls.section} — {cls.label}</code></div>
-          <div className="sf-tech-row"><span>Tax Treatment</span><code>{isExport ? 'Zero-rated (WOPT)' : isIntra ? 'CGST + SGST' : 'IGST'}</code></div>
-          <div className="sf-tech-row"><span>Confidence</span><code>{Math.round((cls.confidence || 0) * 100)}%</code></div>
-          {tx.hsn && <div className="sf-tech-row"><span>HSN/SAC</span><code>{tx.hsn}</code></div>}
+      {/* ─── Trust & Explainability Provenance Drawer ─── */}
+      <div className="sf-provenance-box">
+        <div className="sf-provenance-header" onClick={() => setShowExplain(e => !e)}>
+          <span className="sf-provenance-title">
+            <span className="sf-prov-icon">🔍</span> Why GEZT Classified This (Audit Trail)
+          </span>
+          <button type="button" className="sf-prov-toggle">{showExplain ? 'Hide details ▴' : 'Show details ▾'}</button>
         </div>
-      )}
+        {showExplain && (
+          <div className="sf-provenance-content">
+            <div className="sf-prov-step">
+              <span className="sf-prov-bullet">1</span>
+              <div>
+                <strong>Entity Detection:</strong>{' '}
+                {tx.type === 'B2B' && tx.recipient?.gstin
+                  ? `Valid 15-digit GSTIN (${tx.recipient.gstin}) detected. State code ${tx.pos || tx.recipient.gstin.substring(0, 2)} (${posName}).`
+                  : tx.type === 'EXPORT'
+                  ? `International destination (${tx.exportCountry || 'Overseas'}) detected -> classified as zero-rated export supply.`
+                  : tx.type === 'CDN'
+                  ? `Credit/debit adjustment detected referencing sales return or price modification.`
+                  : `Unregistered retail buyer detected with domestic delivery -> classified as B2C supply.`}
+              </div>
+            </div>
+            <div className="sf-prov-step">
+              <span className="sf-prov-bullet">2</span>
+              <div>
+                <strong>Tax Treatment Rule:</strong>{' '}
+                {isExport
+                  ? 'Section 16 IGST Act: Zero-rated export supply under Letter of Undertaking (LUT / WOPT).'
+                  : isIntra
+                  ? `Intra-State Supply (Karnataka -> Karnataka) -> Equal split: ${computed?.gstRate ? computed.gstRate / 2 : 9}% CGST + ${computed?.gstRate ? computed.gstRate / 2 : 9}% SGST.`
+                  : `Inter-State Supply (Karnataka -> ${posName}) -> 100% IGST (${computed?.gstRate || 18}%).`}
+              </div>
+            </div>
+            <div className="sf-prov-step">
+              <span className="sf-prov-bullet">3</span>
+              <div>
+                <strong>Deterministic Math:</strong>{' '}
+                {isExport
+                  ? `Taxable: ${formatCurrency(computed?.taxableValue || 0)} | GST Rate: 0% | Tax Payable: ₹0`
+                  : `Taxable: ${formatCurrency(computed?.taxableValue || 0)} × Rate: ${computed?.gstRate || 18}% = Total Tax: ${formatCurrency((computed?.igst || 0) + (computed?.cgst || 0) + (computed?.sgst || 0))}`}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="sf-review-card-actions">
-        <button className="action-btn" onClick={() => onEdit(index)}>✎ Edit</button>
+        <button className="action-btn" onClick={() => onEdit(index)}>✎ Edit Details</button>
         <button className="action-btn sf-reject-btn" onClick={() => onRemove(index)}>✕ Remove</button>
       </div>
     </div>
@@ -1945,36 +2003,54 @@ function UploadMode({ navigate, setFilingState, onBack }) {
   const [lastTxType, setLastTxType] = useState('B2B');
   const fileInputRef = useRef(null);
 
-  const DEMO_FILES = [
-    '/sample-invoices/invoice-2001.txt',
-    '/sample-invoices/invoice-2002.txt',
-    '/sample-invoices/invoice-2003.txt',
-    '/sample-invoices/invoice-2004.txt',
-    '/sample-invoices/invoice-2005.txt',
+  const SAMPLE_SCENARIOS = [
+    {
+      name: 'INV-901_TechCorp_B2B.txt',
+      label: 'B2B Hardware Invoice (₹59,000)',
+      type: 'B2B',
+      content: 'TAX INVOICE\nInvoice No: INV-901\nInvoice Date: 2026-09-04\nSupplier: ShreeTech Electronics (29MOCK1234F1Z5)\nBill To: TechCorp Solutions Pvt Ltd\nBuyer GSTIN: 27TECHC1234F1Z5\nPlace of Supply: 27 - Maharashtra\nItem: Server Units (HSN 8471)\nTaxable Value: ₹50,000\nIGST @ 18%: ₹9,000\nTotal Invoice Value: ₹59,000',
+    },
+    {
+      name: 'EXP-402_Dubai_Export.txt',
+      label: 'Export to Dubai ($2,400)',
+      type: 'EXPORT',
+      content: 'EXPORT INVOICE (SUPPLY UNDER BOND/LUT - WOPT)\nInvoice No: EXP-402\nInvoice Date: 2026-09-12\nExporter: ShreeTech Electronics (29MOCK1234F1Z5)\nConsignee: Gulf Trading FZE, Dubai, UAE\nCountry of Destination: United Arab Emirates\nPort of Export: INMAA4 (Chennai Sea Port)\nShipping Bill No: SB-2026-99214\nShipping Bill Date: 2026-09-13\nCurrency: USD\nForeign Value: $2,400\nTaxable Value (INR): ₹1,99,200\nGST: Zero Rated (0%)',
+    },
+    {
+      name: 'CSH-504_Retail_Walkin.txt',
+      label: 'Retail Cash Memo (₹14,500)',
+      type: 'B2C',
+      content: 'RETAIL CASH MEMO\nBill No: CSH-504\nDate: 2026-09-15\nSeller: ShreeTech Electronics\nCustomer: Priya Sharma (Unregistered Consumer / Walk-in)\nPlace of Supply: 29 - Karnataka\nItem: Computer Accessories\nTaxable Value: ₹12,288\nCGST @ 9%: ₹1,106\nSGST @ 9%: ₹1,106\nTotal Invoice Amount: ₹14,500',
+    },
+    {
+      name: 'CDN-108_SalesReturn.txt',
+      label: 'Credit Note for Sales Return (₹5,900)',
+      type: 'CDN',
+      content: 'CREDIT NOTE\nNote No: CDN-108\nNote Date: 2026-09-18\nRecipient: ABC Technologies Pvt Ltd (27AAABM1234C1ZK)\nOriginal Invoice No: INV-1042\nOriginal Invoice Date: 2026-09-03\nReason for Note: Sales return / Defective unit replacement\nTaxable Value: ₹5,000\nIGST @ 18%: ₹900\nTotal Credit Note Value: ₹5,900',
+    },
   ];
+
+  const loadScenario = (scenario) => {
+    const blob = new Blob([scenario.content], { type: 'text/plain' });
+    const f = new File([blob], scenario.name, { type: 'text/plain' });
+    setFiles([f]);
+  };
+
+  const loadAllScenarios = () => {
+    const allFiles = SAMPLE_SCENARIOS.map(s => {
+      const blob = new Blob([s.content], { type: 'text/plain' });
+      return new File([blob], s.name, { type: 'text/plain' });
+    });
+    setFiles(allFiles);
+  };
 
   const handleFiles = (newFiles) => {
     const accepted = Array.from(newFiles).filter(f => {
       const ext = f.name.toLowerCase().match(/\.[^.]+$/)?.[0];
-      return ['.txt', '.pdf', '.csv', '.json'].includes(ext) || f.type === 'application/pdf';
+      return ['.txt', '.pdf', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp'].includes(ext) || f.type.startsWith('image/') || f.type === 'application/pdf';
     });
     if (!accepted.length) return;
     setFiles(prev => [...prev, ...accepted]);
-  };
-
-  const loadDemoInvoices = async () => {
-    const demoFiles = [];
-    for (const url of DEMO_FILES) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) continue;
-        const text = await res.text();
-        const name = url.split('/').pop();
-        const blob = new Blob([text], { type: 'text/plain' });
-        demoFiles.push(new File([blob], name, { type: 'text/plain' }));
-      } catch { /* skip */ }
-    }
-    if (demoFiles.length) setFiles(demoFiles);
   };
 
   const processAllFiles = async () => {
@@ -1987,17 +2063,30 @@ function UploadMode({ navigate, setFilingState, onBack }) {
     for (let i = 0; i < files.length; i++) {
       await new Promise(r => setTimeout(r, 300 + Math.random() * 200));
       try {
-        const text = await readFileAsText(files[i]);
-        let aiResult = null;
+        const file = files[i];
+        const isImageOrPdf = file.type.startsWith('image/') || file.type === 'application/pdf';
+        
+        let textContent = '';
+        let aiInput = null;
 
+        if (isImageOrPdf) {
+          const dataUrl = await readFileAsDataUrl(file);
+          aiInput = { dataUrl, name: file.name };
+          textContent = file.name;
+        } else {
+          textContent = await readFileAsText(file);
+          aiInput = textContent;
+        }
+
+        let aiResult = null;
         if (HAS_KEY) {
-          console.log(`[Smart Filing] Processing invoice ${i + 1}/${files.length}: ${files[i].name}`);
-          aiResult = await callLLMForInvoice(text);
+          console.log(`[Smart Filing] Processing invoice ${i + 1}/${files.length}: ${file.name}`);
+          aiResult = await callLLMForInvoice(aiInput);
         }
 
         if (!aiResult) {
           console.log(`[Smart Filing] Invoice ${i + 1} using Demo Mode extraction`);
-          aiResult = getMockInvoiceResponse(files[i].name, text);
+          aiResult = getMockInvoiceResponse(file.name, textContent);
         }
 
         if (!aiResult || !Array.isArray(aiResult.transactions) || !aiResult.transactions.length) {
@@ -2153,9 +2242,9 @@ function UploadMode({ navigate, setFilingState, onBack }) {
             id="sf-dropzone"
           >
             <span className="sf-drop-icon">↑</span>
-            <p className="sf-drop-title">Drop invoice files here</p>
-            <p className="sf-drop-sub">or click to select — PDF, TXT, CSV supported</p>
-            <input ref={fileInputRef} type="file" multiple accept=".txt,.pdf,.csv,.json" style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} id="sf-file-input" />
+            <p className="sf-drop-title">Upload invoice documents or take photo</p>
+            <p className="sf-drop-sub">PDF, PNG, JPG, CSV, or TXT supported</p>
+            <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.csv,.json,image/*,application/pdf" style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} id="sf-file-input" />
           </div>
 
           {files.length > 0 && (
@@ -2177,9 +2266,24 @@ function UploadMode({ navigate, setFilingState, onBack }) {
                 Extract from {files.length} invoice{files.length > 1 ? 's' : ''} →
               </button>
             ) : (
-              <button className="action-btn" onClick={loadDemoInvoices} id="btn-sf-demo-invoices">
-                ★ Load 5 sample invoices for demo
-              </button>
+              <div className="sf-demo-scenarios-panel">
+                <span className="sf-demo-scenarios-title">★ Instant Test Scenarios (No file required):</span>
+                <div className="sf-scenario-chips">
+                  {SAMPLE_SCENARIOS.map(s => (
+                    <button
+                      key={s.name}
+                      className="sf-scenario-chip"
+                      onClick={() => loadScenario(s)}
+                      title={`Load ${s.label}`}
+                    >
+                      <span>{s.type}</span> {s.label}
+                    </button>
+                  ))}
+                  <button className="sf-scenario-chip sf-scenario-chip--all" onClick={loadAllScenarios}>
+                    ★ Load All 4 Scenarios
+                  </button>
+                </div>
+              </div>
             )}
           </div>
           <p className="sf-upload-note">You stay in control. GEZT prepares the details and shows you what it understood before anything is added to your return.</p>

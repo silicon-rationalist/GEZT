@@ -53,6 +53,20 @@ function Header({ view, auth, navigate, onLogout }) {
     close();
   };
 
+  const scrollToSection = (sectionId) => {
+    close();
+    if (view !== 'home') {
+      navigate('home');
+      setTimeout(() => {
+        const el = document.getElementById(sectionId);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 60);
+    } else {
+      const el = document.getElementById(sectionId);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <>
       <div className="utility-bar">
@@ -87,7 +101,7 @@ function Header({ view, auth, navigate, onLogout }) {
               </div>
             )}
           </div>
-          <button className="menu-button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="main-nav">
+          <button className="menu-button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="main-nav" id="mobile-menu-btn">
             <span className="sr-only">{open ? 'Close' : 'Open'} navigation</span>
             <i /><i /><i />
           </button>
@@ -95,17 +109,22 @@ function Header({ view, auth, navigate, onLogout }) {
         <nav className="main-nav" id="main-nav" aria-label="Main navigation">
           <div className={open ? 'container nav-inner nav-open' : 'container nav-inner'}>
             <a href="#" className={view === 'home' ? 'active' : ''} onClick={e => { e.preventDefault(); goHome(); }}>Home</a>
-            {!isPortal && <>
-              <a href="#services" onClick={close}>Services</a>
-              <a href="#filing-options" onClick={close}>Returns</a>
-              <a href="#information" onClick={close}>Information</a>
-              <a href="#help" onClick={close}>Help and support</a>
-            </>}
-            {isPortal && auth && <>
-              <a href="#" className={view === 'dashboard' ? 'active' : ''} onClick={e => { e.preventDefault(); navigate('dashboard'); close(); }}>Dashboard</a>
-            </>}
+            {auth && (
+              <a href="#" className={view === 'dashboard' ? 'active' : ''} onClick={e => { e.preventDefault(); navigate('dashboard'); close(); }} id="nav-dashboard">
+                <span>Dashboard</span>
+              </a>
+            )}
+            <a href="#services" onClick={e => { e.preventDefault(); scrollToSection('services'); }}>Services</a>
+            <a href="#filing-options" onClick={e => { e.preventDefault(); scrollToSection('filing-options'); }}>Returns</a>
+            <a href="#information" onClick={e => { e.preventDefault(); scrollToSection('information'); }}>Information</a>
+            <a href="#help" onClick={e => { e.preventDefault(); scrollToSection('help'); }}>Help and support</a>
             {!auth && (
-              <button type="button" className="login-button" onClick={() => { goLogin(); close(); }}>Sign in <Arrow /></button>
+              <button type="button" className="login-button" onClick={() => { goLogin(); close(); }} id="btn-header-signin">Sign in <Arrow /></button>
+            )}
+            {auth && open && (
+              <button type="button" className="nav-link-btn mobile-nav-logout-btn" onClick={() => { close(); setShowConfirmLogout(true); }}>
+                Sign Out
+              </button>
             )}
           </div>
         </nav>
@@ -740,7 +759,18 @@ const SIDEBAR_TABS = [
 
 function OnlineFilingScreen({ navigate, filingState, setFilingState, initialTab }) {
   const [tab, setTab] = useState(initialTab || 'b2b');
-  const [viewMode, setViewMode] = useState('table');
+  const [viewMode, setViewMode] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768) ? 'cards' : 'table');
+
+  const tabCounts = {
+    b2b: filingState.b2bInvoices.length,
+    b2c: filingState.b2cInvoices.length,
+    exports: filingState.exports.length,
+    cdn: filingState.creditNotes.length,
+    advances: filingState.advances.length,
+    amendments: filingState.amendments.length,
+    hsn: filingState.hsnSummary.length,
+    docs: filingState.documentSeries.length,
+  };
 
   const goNext = () => {
     const idx = SIDEBAR_TABS.findIndex(t => t.key === tab);
@@ -808,7 +838,8 @@ function OnlineFilingScreen({ navigate, filingState, setFilingState, initialTab 
                   onClick={() => setTab(t.key)}
                   id={`tab-${t.key}`}
                 >
-                  {t.label}
+                  <span>{t.label}</span>
+                  {tabCounts[t.key] > 0 && <span style={{ marginLeft: 6, opacity: 0.85, fontSize: '0.9em' }}>({tabCounts[t.key]})</span>}
                 </button>
               ))}
             </nav>
@@ -2530,8 +2561,72 @@ function DocsSection({ filingState, setFilingState, viewMode }) {
 
 // ─── Online Summary Screen ────────────────────────────────────────────────────
 
-function OnlineSummaryScreen({ navigate, filingState }) {
+// ─── GSTR-3B Tax Impact Card ──────────────────────────────────────────────────
+
+function GSTR3BImpactCard({ summary }) {
+  const outwardIgst = summary.totalIgst;
+  const outwardCgst = summary.totalCgst;
+  const outwardSgst = summary.totalSgst;
+  const outwardTotal = summary.totalTax;
+
+  // Estimated ITC Available (auto-drafted from GSTR-2B inward supplies benchmark)
+  const estimatedItcIgst = Math.round(outwardIgst * 0.65);
+  const estimatedItcCgst = Math.round(outwardCgst * 0.70);
+  const estimatedItcSgst = Math.round(outwardSgst * 0.70);
+  const totalItc = estimatedItcIgst + estimatedItcCgst + estimatedItcSgst;
+
+  // Net Cash Payable
+  const cashIgst = Math.max(0, outwardIgst - estimatedItcIgst);
+  const cashCgst = Math.max(0, outwardCgst - estimatedItcCgst);
+  const cashSgst = Math.max(0, outwardSgst - estimatedItcSgst);
+  const netCashPayable = cashIgst + cashCgst + cashSgst;
+
+  return (
+    <div className="gstr3b-impact-card" id="gstr3b-impact-preview">
+      <div className="gstr3b-impact-header">
+        <div>
+          <span className="gstr3b-badge">GSTR-3B Tax Impact Live Preview</span>
+          <h3>Estimated Monthly Tax Liability</h3>
+          <p>Auto-drafted from your GSTR-1 outward supplies and GSTR-2B input tax credit ledger.</p>
+        </div>
+        <div className="gstr3b-total-box">
+          <span>Net Payable in Cash</span>
+          <strong>{formatCurrency(netCashPayable)}</strong>
+        </div>
+      </div>
+      <div className="gstr3b-impact-grid">
+        <div className="gstr3b-impact-col">
+          <span className="col-title">Table 3.1 — Gross Tax Liability</span>
+          <div className="impact-row"><span>Integrated Tax (IGST)</span><strong>{formatCurrency(outwardIgst)}</strong></div>
+          <div className="impact-row"><span>Central Tax (CGST)</span><strong>{formatCurrency(outwardCgst)}</strong></div>
+          <div className="impact-row"><span>State Tax (SGST)</span><strong>{formatCurrency(outwardSgst)}</strong></div>
+          <div className="impact-row subtotal"><span>Total Outward Tax</span><strong>{formatCurrency(outwardTotal)}</strong></div>
+        </div>
+        <div className="gstr3b-impact-col">
+          <span className="col-title">Table 4 — Auto-Drafted ITC (2B)</span>
+          <div className="impact-row"><span>Eligible IGST Credit</span><strong className="text-credit">− {formatCurrency(estimatedItcIgst)}</strong></div>
+          <div className="impact-row"><span>Eligible CGST Credit</span><strong className="text-credit">− {formatCurrency(estimatedItcCgst)}</strong></div>
+          <div className="impact-row"><span>Eligible SGST Credit</span><strong className="text-credit">− {formatCurrency(estimatedItcSgst)}</strong></div>
+          <div className="impact-row subtotal"><span>Total Available ITC</span><strong className="text-credit">− {formatCurrency(totalItc)}</strong></div>
+        </div>
+        <div className="gstr3b-impact-col highlighted-col">
+          <span className="col-title">Table 6.1 — Payment in Cash</span>
+          <div className="impact-row"><span>IGST Cash Offset</span><strong>{formatCurrency(cashIgst)}</strong></div>
+          <div className="impact-row"><span>CGST Cash Offset</span><strong>{formatCurrency(cashCgst)}</strong></div>
+          <div className="impact-row"><span>SGST Cash Offset</span><strong>{formatCurrency(cashSgst)}</strong></div>
+          <div className="impact-row subtotal grand-cash"><span>Net Cash Required</span><strong>{formatCurrency(netCashPayable)}</strong></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Online Summary Screen ────────────────────────────────────────────────────
+
+function OnlineSummaryScreen({ navigate, filingState, onResetData }) {
   const summary = computeSummary(filingState);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   return (
     <main className="portal-page">
       <div className="container">
@@ -2541,8 +2636,22 @@ function OnlineSummaryScreen({ navigate, filingState }) {
           <button onClick={() => navigate('online-b2b')}>GSTR-1 Online</button> <span>/</span>
           <span>Summary</span>
         </div>
-        <h1 className="page-title">GSTR-1 Summary — {RETURN_PERIOD.label}</h1>
-        <p className="page-sub">{BUSINESS.name} · {BUSINESS.gstin}</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h1 className="page-title">GSTR-1 Summary — {RETURN_PERIOD.label}</h1>
+            <p className="page-sub">{BUSINESS.name} · {BUSINESS.gstin}</p>
+          </div>
+          {onResetData && (
+            <button
+              className="action-btn"
+              onClick={() => setShowResetConfirm(true)}
+              style={{ fontSize: 12, padding: '6px 12px', alignSelf: 'center' }}
+              title="Reset all return records to initial demo sample dataset"
+            >
+              ↺ Reset to Sample Data
+            </button>
+          )}
+        </div>
 
         <div className="summary-card">
           <div className="summary-card-header">
@@ -2606,12 +2715,28 @@ function OnlineSummaryScreen({ navigate, filingState }) {
           </div>
         </div>
 
+        {/* Live GSTR-3B Tax Impact Card */}
+        <GSTR3BImpactCard summary={summary} />
+
         <div className="summary-actions">
           <button className="action-btn" onClick={() => navigate('online-b2b')}>← Edit Return</button>
           <button className="action-btn primary-action-btn" onClick={() => navigate('online-preview')} id="btn-validate-preview">
             Validate &amp; Preview <Arrow />
           </button>
         </div>
+
+        {showResetConfirm && (
+          <div className="modal-overlay" role="dialog" aria-modal="true">
+            <div className="modal-card">
+              <h3>Reset Return Data?</h3>
+              <p>This will restore all GSTR-1 tables to the default sample dataset for ShreeTech Electronics. Any newly added invoices will be cleared.</p>
+              <div className="modal-actions">
+                <button type="button" className="modal-btn-cancel" onClick={() => setShowResetConfirm(false)}>Cancel</button>
+                <button type="button" className="modal-btn-danger" onClick={() => { onResetData?.(); setShowResetConfirm(false); }}>Yes, Reset Data</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
@@ -3127,16 +3252,58 @@ function App() {
   // postLoginDest: where to go after login (defaults to 'dashboard')
   const [postLoginDest, setPostLoginDest] = useState('dashboard');
 
-  const [filingState, setFilingState] = useState({
-    b2bInvoices: [...INITIAL_B2B_INVOICES],
-    b2cInvoices: [...INITIAL_B2C_INVOICES],
-    exports: [...INITIAL_EXPORTS],
-    creditNotes: [...INITIAL_CREDIT_NOTES],
-    advances: [...INITIAL_ADVANCES],
-    amendments: [...INITIAL_AMENDMENTS],
-    hsnSummary: [...INITIAL_HSN_SUMMARY],
-    documentSeries: [...INITIAL_DOCUMENT_SERIES],
+  const PORTAL_STORAGE_KEY = 'gezt_portal_filing_state_v1';
+
+  const [filingState, setFilingState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(PORTAL_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.b2bInvoices) && parsed.b2bInvoices.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('[GEZT Storage] Failed to load filingState from localStorage:', e);
+    }
+    return {
+      b2bInvoices: [...INITIAL_B2B_INVOICES],
+      b2cInvoices: [...INITIAL_B2C_INVOICES],
+      exports: [...INITIAL_EXPORTS],
+      creditNotes: [...INITIAL_CREDIT_NOTES],
+      advances: [...INITIAL_ADVANCES],
+      amendments: [...INITIAL_AMENDMENTS],
+      hsnSummary: [...INITIAL_HSN_SUMMARY],
+      documentSeries: [...INITIAL_DOCUMENT_SERIES],
+    };
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PORTAL_STORAGE_KEY, JSON.stringify(filingState));
+    } catch (e) {
+      console.warn('[GEZT Storage] Failed to persist filingState:', e);
+    }
+  }, [filingState]);
+
+  const resetFilingData = () => {
+    const fresh = {
+      b2bInvoices: [...INITIAL_B2B_INVOICES],
+      b2cInvoices: [...INITIAL_B2C_INVOICES],
+      exports: [...INITIAL_EXPORTS],
+      creditNotes: [...INITIAL_CREDIT_NOTES],
+      advances: [...INITIAL_ADVANCES],
+      amendments: [...INITIAL_AMENDMENTS],
+      hsnSummary: [...INITIAL_HSN_SUMMARY],
+      documentSeries: [...INITIAL_DOCUMENT_SERIES],
+    };
+    setFilingState(fresh);
+    try {
+      localStorage.setItem(PORTAL_STORAGE_KEY, JSON.stringify(fresh));
+    } catch (e) {
+      console.warn('Reset storage failed', e);
+    }
+  };
 
   const navigate = (dest, smartIntent) => {
     // Guard portal views behind auth
@@ -3176,7 +3343,7 @@ function App() {
       case 'login': return <LoginScreen navigate={navigate} onAuth={onAuth} postLoginDest={postLoginDest} />;
       case 'dashboard': return <DashboardScreen navigate={navigate} />;
       case 'gstr1-select': return <DashboardScreen navigate={navigate} />;
-      case 'online-summary': return <OnlineSummaryScreen navigate={navigate} filingState={filingState} />;
+      case 'online-summary': return <OnlineSummaryScreen navigate={navigate} filingState={filingState} onResetData={resetFilingData} />;
       case 'online-preview': return <OnlinePreviewScreen navigate={navigate} filingState={filingState} />;
       case 'online-submit': return <OnlineSubmitScreen navigate={navigate} filingState={filingState} />;
       case 'offline-landing':
